@@ -3,6 +3,8 @@
 
 # Please note 16,7 million splats will be the max you can go with this shader!
 
+# to use this, simply click "Code" download zip and import the whole UnlockedVRChatGaussianSplatting-main into your unity asset folder
+
 # VRChat Gaussian Splatting
 Gaussian splatting implementation in VRChat
 ## Usage
