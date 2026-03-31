@@ -3,7 +3,6 @@
 using System.IO;
 using Unity.Collections;
 using System.IO.Compression;
-using GaussianSplatting.Runtime;
 using Unity.Burst;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -23,6 +22,7 @@ namespace GaussianSplatting.Editor.Utils
             public uint numPoints;
             public uint sh_fracbits_flags_reserved;
         };
+
         public static void ReadFileHeader(string filePath, out int vertexCount)
         {
             vertexCount = 0;
@@ -69,8 +69,9 @@ namespace GaussianSplatting.Editor.Utils
             using var gz = new GZipStream(fs, CompressionMode.Decompress);
             ReadHeaderImpl(filePath, gz, out var splatCount, out var shLevel, out var fractBits, out var flags);
 
-            if (splatCount < 1 || splatCount > 10_000_000) // 10M hardcoded in SPZ code
-                throw new IOException($"SPZ {filePath} read error, out of range splat count {splatCount}");
+            // ÄNDRAD: SPZ-spärren på 10M borttagen! (Även om SPZ sällan blir så stora)
+            if (splatCount < 1) 
+                throw new IOException($"SPZ {filePath} read error, invalid splat count {splatCount}");
             if (shLevel < 0 || shLevel > 3)
                 throw new IOException($"SPZ {filePath} read error, out of range SH level {shLevel}");
             if (fractBits < 0 || fractBits > 24)
@@ -102,8 +103,7 @@ namespace GaussianSplatting.Editor.Utils
             job.packedRot = packedRot;
             job.packedAlpha = packedAlpha;
             job.packedCol = packedCol;
-            job.packedSh = packedSh;
-            job.shCoeffs = shCoeffs;
+            
             job.fractScale = 1.0f / (1 << fractBits);
             job.splats = splats;
             job.Schedule(splatCount, 4096).Complete();
@@ -114,7 +114,7 @@ namespace GaussianSplatting.Editor.Utils
             packedRot.Dispose();
             packedAlpha.Dispose();
             packedCol.Dispose();
-            packedSh.Dispose();
+            packedSh.Dispose(); // Vi läser in datan för att gz-streamen ska hoppa fram rätt antal bytes, men slänger den direkt.
 
             if (!readOk)
             {
@@ -131,50 +131,53 @@ namespace GaussianSplatting.Editor.Utils
             [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedRot;
             [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedAlpha;
             [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedCol;
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedSh;
+            
             public float fractScale;
-            public int shCoeffs;
             public NativeArray<InputSplatData> splats;
 
             public void Execute(int index)
             {
                 var splat = splats[index];
 
+                // pos
                 splat.pos = new Vector3(UnpackFloat(index * 3 + 0) * fractScale, UnpackFloat(index * 3 + 1) * fractScale, UnpackFloat(index * 3 + 2) * fractScale);
 
-                splat.scale = new Vector3(packedScale[index * 3 + 0], packedScale[index * 3 + 1], packedScale[index * 3 + 2]) / 16.0f - new Vector3(10.0f, 10.0f, 10.0f);
-                splat.scale = GaussianUtils.LinearScale(splat.scale);
+                // scale (linearize)
+                Vector3 sc = new Vector3(packedScale[index * 3 + 0], packedScale[index * 3 + 1], packedScale[index * 3 + 2]) / 16.0f - new Vector3(10.0f, 10.0f, 10.0f);
+                splat.scale = new Vector3(math.exp(sc.x), math.exp(sc.y), math.exp(sc.z));
 
+                // rot
                 Vector3 xyz = new Vector3(packedRot[index * 3 + 0], packedRot[index * 3 + 1], packedRot[index * 3 + 2]) * (1.0f / 127.5f) - new Vector3(1, 1, 1);
                 float w = math.sqrt(math.max(0.0f, 1.0f - xyz.sqrMagnitude));
                 var q = new float4(xyz.x, xyz.y, xyz.z, w);
                 var qq = math.normalize(q);
-                qq = GaussianUtils.PackSmallest3Rotation(qq);
+
+                // Inline GaussianUtils.PackSmallest3Rotation logic
+                if (qq.w < 0) {
+                    qq.x = -qq.x;
+                    qq.y = -qq.y;
+                    qq.z = -qq.z;
+                    qq.w = -qq.w;
+                }
+                
                 splat.rot = new Quaternion(qq.x, qq.y, qq.z, qq.w);
 
+                // opacity
                 splat.opacity = packedAlpha[index] / 255.0f;
 
+                // color
                 Vector3 col = new Vector3(packedCol[index * 3 + 0], packedCol[index * 3 + 1], packedCol[index * 3 + 2]);
                 col = col / 255.0f - new Vector3(0.5f, 0.5f, 0.5f);
                 col /= 0.15f;
-                splat.dc0 = GaussianUtils.SH0ToColor(col);
+                
+                float SH_C0 = 0.2820948f;
+                splat.dc0 = new Vector3(
+                    col.x * SH_C0 + 0.5f,
+                    col.y * SH_C0 + 0.5f,
+                    col.z * SH_C0 + 0.5f
+                );
 
-                int shIdx = index * shCoeffs * 3;
-                splat.sh1 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh2 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh3 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh4 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh5 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh6 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh7 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh8 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh9 = UnpackSH(shIdx); shIdx += 3;
-                splat.shA = UnpackSH(shIdx); shIdx += 3;
-                splat.shB = UnpackSH(shIdx); shIdx += 3;
-                splat.shC = UnpackSH(shIdx); shIdx += 3;
-                splat.shD = UnpackSH(shIdx); shIdx += 3;
-                splat.shE = UnpackSH(shIdx); shIdx += 3;
-                splat.shF = UnpackSH(shIdx); shIdx += 3;
+                // BORTTAGET: unpack av sh1-shF 
 
                 splats[index] = splat;
             }
@@ -185,15 +188,7 @@ namespace GaussianSplatting.Editor.Utils
                 fx |= (fx & 0x800000) != 0 ? -16777216 : 0; // sign extension with 0xff000000
                 return fx;
             }
-
-            Vector3 UnpackSH(int idx)
-            {
-                Vector3 sh = new Vector3(packedSh[idx], packedSh[idx + 1], packedSh[idx + 2]) - new Vector3(128.0f, 128.0f, 128.0f);
-                sh /= 128.0f;
-                return sh;
-            }
         }
-
     }
 }
 #endif // UNITY_EDITOR
