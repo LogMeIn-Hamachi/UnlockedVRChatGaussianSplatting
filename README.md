@@ -5,6 +5,8 @@
 
 # to use this, simply click "Code" download zip and import the whole UnlockedVRChatGaussianSplatting-main into your unity asset folder
 
+# Examples of changes to import settings, change "Splat count per pass" to 1048576 , Change "Max Alpha Mask Count" to 3. Please try different values and see what gives best performance to your splat.
+
 # VRChat Gaussian Splatting
 Gaussian splatting implementation in VRChat
 ## Usage
