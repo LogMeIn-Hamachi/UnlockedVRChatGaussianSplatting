@@ -1,4 +1,3 @@
-
 #if UNITY_EDITOR && !COMPILER_UDONSHARP
 using System;
 using Unity.Collections;  
@@ -455,7 +454,7 @@ namespace GaussianSplatting.Editor.Importers
             {
                 _plyPaths.Clear();
             }
-            scrollPosition = GUILayout.BeginScrollView(scrollPosition, true, true, GUILayout.Height(100));	
+            scrollPosition = GUILayout.BeginScrollView(scrollPosition, true, true, GUILayout.Height(100));    
             for (int i = 0; i < _plyPaths.Count; ++i)
             {
                 EditorGUILayout.BeginHorizontal();
@@ -484,7 +483,8 @@ namespace GaussianSplatting.Editor.Importers
                 }
             }
             
-            EditorGUILayout.HelpBox("At the moment more than 8M splats or .PLY files larger than 2GB don't work. ", MessageType.Info);
+            // ÄNDRAD: Uppdaterad varningsruta
+            EditorGUILayout.HelpBox("Modified version: Spärrarna för 2GB och 8M splats är borttagna! Se till att du behåller Multi-Pass rendering påslaget för jättestora filer.", MessageType.Info);
 
             EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("Output Folder", EditorStyles.boldLabel);
@@ -503,7 +503,10 @@ namespace GaussianSplatting.Editor.Importers
                 {
                     _splatsPerPass = EditorGUILayout.IntField("Splat Count Per Pass", _splatsPerPass);
                     EditorGUILayout.HelpBox("The rendering of the splat is split into multiple sequential chunks, can help with VR rendering performance.", MessageType.Info);
-                    _splatsPerPass = Mathf.Clamp(_splatsPerPass, 128 * 1024, 8 * 1024 * 1024);
+                    
+                    // ÄNDRAD: Spärren för 8M är här höjd till 32M!
+                    _splatsPerPass = Mathf.Clamp(_splatsPerPass, 128 * 1024, 32 * 1024 * 1024);
+                    
                     _maxAlphaMaskCount = EditorGUILayout.IntField("Max Alpha Mask Count", _maxAlphaMaskCount);
                     EditorGUILayout.HelpBox("After each chunk is rendered an optional alpha mask pass is added using a grab pass and stencil. This will occlude the following chunks if they are behind opaque objects. This can help performance, but grab pass can be expensive, so use it with care. If you have more than 4M splats you might want to have more than 1 alpha mask pass.", MessageType.Info);
                 }
