@@ -24,9 +24,7 @@ namespace GaussianSplatting.Editor.Utils
 
         static void ReadHeaderImpl(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, FileStream fs)
         {
-            // C# arrays and NativeArrays make it hard to have a "byte" array larger than 2GB :/
-            if (fs.Length >= 2 * 1024 * 1024 * 1024L)
-                throw new IOException($"PLY {filePath} read error: currently files larger than 2GB are not supported");
+            // BORTTAGET: 2GB-spärren är borttagen!
 
             // read header
             vertexCount = 0;
@@ -64,15 +62,34 @@ namespace GaussianSplatting.Editor.Utils
             }
         }
 
-        public static void ReadFile(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, out NativeArray<byte> vertices)
+        // Returnerar nu en array av NativeArrays (chunks) istället för en enda för att kringgå RAM-gränser
+        public static void ReadFile(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, out NativeArray<byte>[] verticesChunks)
         {
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
             ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrs, fs);
 
-            vertices = new NativeArray<byte>(vertexCount * vertexStride, Allocator.Persistent);
-            var readBytes = fs.Read(vertices);
-            if (readBytes != vertices.Length)
-                throw new IOException($"PLY {filePath} read error, expected {vertices.Length} data bytes got {readBytes}");
+            // Räkna ut total storlek med long för att undvika overflow på enorma filer
+            long totalBytes = (long)vertexCount * vertexStride;
+            
+            int maxChunkSize = 1000000000; // Ca 1 GB stora bitar
+            maxChunkSize -= (maxChunkSize % vertexStride); // Se till att bitarna slutar exakt efter en hel splat!
+            
+            int numChunks = (int)((totalBytes + maxChunkSize - 1) / maxChunkSize);
+
+            verticesChunks = new NativeArray<byte>[numChunks];
+            long bytesRemaining = totalBytes;
+
+            for (int i = 0; i < numChunks; i++)
+            {
+                int chunkSize = (int)Math.Min(bytesRemaining, (long)maxChunkSize);
+                verticesChunks[i] = new NativeArray<byte>(chunkSize, Allocator.Persistent);
+                
+                var readBytes = fs.Read(verticesChunks[i]);
+                if (readBytes != chunkSize)
+                    throw new IOException($"PLY {filePath} read error i chunk {i}, förväntade {chunkSize} bytes men fick {readBytes}");
+                
+                bytesRemaining -= chunkSize;
+            }
         }
 
         public enum ElementType
