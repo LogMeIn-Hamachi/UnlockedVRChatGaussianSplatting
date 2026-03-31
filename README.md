@@ -1,5 +1,5 @@
 
-# CHANGES: Vibe coded importer so it handles files larger then 2gb and 8 million splats, changed default radix sort RT textures to 4096 size. Please read note about Radix sort textures further down if you use a splat smaller then 4 million splatts.
+# CHANGES: Vibe coded importer so it handles files larger then 2gb and 8 million splats, changed default radix sort RT textures to 4096 size. Please read TIP about Radix sort textures further down if you use a splat smaller then 4 million splatts.
 
 # VRChat Gaussian Splatting
 Gaussian splatting implementation in VRChat
